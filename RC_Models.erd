@@ -1,0 +1,228 @@
+erdiagram RC_Models
+
+notation=crowsfoot
+
+// Customers and Addresses
+entity Customer {
+    customer_id: INTEGER key
+    name: VARCHAR(100)
+    email: VARCHAR(100)
+    phone: VARCHAR(30)
+    status: VARCHAR(20) // prospect, active, inactive
+    created_at: DATE
+    source: VARCHAR(50) // fine_scale_mag, web_signup, etc.
+}
+
+entity Address {
+    address_id: INTEGER key
+    customer_id: INTEGER
+    type: VARCHAR(20) // billing, shipping
+    line1: VARCHAR(200)
+    line2: VARCHAR(200)
+    city: VARCHAR(100)
+    state: VARCHAR(50)
+    postal_code: VARCHAR(20)
+    country: VARCHAR(50)
+}
+
+relationship CustomerAddress {
+    Customer[1 | "customer"] -> Address[0..N | "addresses"]
+}
+
+// Manufacturers and Products
+entity Manufacturer {
+    manufacturer_id: INTEGER key
+    name: VARCHAR(100)
+    website: VARCHAR(200)
+    phone: VARCHAR(30)
+}
+
+entity Product {
+    product_id: INTEGER key
+    sku: VARCHAR(50)
+    name: VARCHAR(200)
+    category: VARCHAR(20) // model, decal
+    scale: VARCHAR(20) // e.g., 1/144, 1/32
+    msrp: DECIMAL(10,2)
+    current_price: DECIMAL(10,2)
+    status: VARCHAR(20) // active, discontinued
+    min_qty_on_hand: INTEGER // reorder threshold
+    reorder_qty: INTEGER // typical reorder quantity
+    first_stocked_at: DATE
+    manufacturer_id: INTEGER
+}
+
+relationship ProductManufacturer {
+    Product[N | "products"] -> Manufacturer[1 | "manufacturer"]
+}
+
+// Sales Orders and Lines (lines are weak, identified by order + line_no)
+entity SalesOrder {
+    order_id: INTEGER key
+    order_date: DATE
+    status: VARCHAR(20) // pending, partially_shipped, completed, cancelled
+    payment_status: VARCHAR(20) // authorized, captured, voided
+    shipping_charge: DECIMAL(10,2)
+    customer_id: INTEGER
+    billing_address_id: INTEGER
+    shipping_address_id: INTEGER
+}
+
+weak entity SalesOrderLine {
+    line_no: INTEGER partial-key
+    product_id: INTEGER
+    quantity: INTEGER
+    unit_price: DECIMAL(10,2)
+    backorder_allowed: BOOLEAN
+    backordered_qty: INTEGER
+}
+
+weak relationship OrderHasLines {
+    SalesOrder -> SalesOrderLine
+}
+
+relationship OrderCustomer {
+    SalesOrder[N | "orders"] -> Customer[1 | "customer"]
+}
+
+// Shipments and Shipment Lines (weak)
+entity Shipment {
+    shipment_id: INTEGER key
+    ship_date: DATE
+    status: VARCHAR(20) // pending, shipped, delivered, returned
+    carrier: VARCHAR(50)
+    tracking_number: VARCHAR(100)
+    order_id: INTEGER
+}
+
+weak entity ShipmentLine {
+    line_no: INTEGER partial-key
+    product_id: INTEGER
+    order_id: INTEGER // reference to originating order
+    order_line_no: INTEGER // reference to order line
+    quantity_shipped: INTEGER
+}
+
+weak relationship ShipmentHasLines {
+    Shipment -> ShipmentLine
+}
+
+relationship ShipmentOrder {
+    Shipment[N | "shipments"] -> SalesOrder[1 | "order"]
+}
+
+relationship ShipsItemsFor {
+    ShipmentLine[N] -> SalesOrderLine[1]
+}
+
+// Invoices and Payments (invoice printed and enclosed with shipment)
+entity Invoice {
+    invoice_id: INTEGER key
+    invoice_date: DATE
+    total_amount: DECIMAL(10,2)
+    shipping_charge: DECIMAL(10,2)
+    order_id: INTEGER
+    shipment_id: INTEGER
+    customer_id: INTEGER
+}
+
+weak entity InvoiceLine {
+    line_no: INTEGER partial-key
+    product_id: INTEGER
+    quantity: INTEGER
+    unit_price: DECIMAL(10,2)
+}
+
+weak relationship InvoiceHasLines {
+    Invoice -> InvoiceLine
+}
+
+relationship ShipmentInvoice {
+    Shipment[1 | "shipment"] -> Invoice[0..1 | "invoice"]
+}
+
+relationship InvoiceCustomer {
+    Invoice[N] -> Customer[1]
+}
+
+relationship InvoiceFromShipmentLine {
+    InvoiceLine[N] -> ShipmentLine[1]
+}
+
+entity Payment {
+    payment_id: INTEGER key
+    payment_date: DATE
+    amount: DECIMAL(10,2)
+    status: VARCHAR(20) // authorized, captured, refunded
+    method: VARCHAR(20) // credit_card
+    auth_code: VARCHAR(50)
+    invoice_id: INTEGER
+}
+
+relationship InvoicePayments {
+    Invoice[1] -> Payment[0..N]
+}
+
+// Purchasing, Receiving, and Inventory
+entity PurchaseOrder {
+    po_id: INTEGER key
+    order_date: DATE
+    status: VARCHAR(20) // created, submitted, partially_received, closed
+    manufacturer_id: INTEGER
+}
+
+weak entity PurchaseOrderLine {
+    line_no: INTEGER partial-key
+    product_id: INTEGER
+    quantity_ordered: INTEGER
+    unit_cost: DECIMAL(10,2)
+}
+
+weak relationship POHasLines {
+    PurchaseOrder -> PurchaseOrderLine
+}
+
+relationship POMfg {
+    PurchaseOrder[N] -> Manufacturer[1]
+}
+
+entity Receipt {
+    receipt_id: INTEGER key
+    receive_date: DATE
+    status: VARCHAR(20) // pending, received, closed
+    po_id: INTEGER
+}
+
+weak entity ReceiptLine {
+    line_no: INTEGER partial-key
+    product_id: INTEGER
+    quantity_received: INTEGER
+    unit_cost: DECIMAL(10,2)
+    po_line_no: INTEGER
+}
+
+weak relationship ReceiptHasLines {
+    Receipt -> ReceiptLine
+}
+
+relationship ReceiptPO {
+    Receipt[N] -> PurchaseOrder[1]
+}
+
+relationship ReceiptLinePOLine {
+    ReceiptLine[N] -> PurchaseOrderLine[1]
+}
+
+entity InventoryTransaction {
+    txn_id: INTEGER key
+    txn_date: DATE
+    txn_type: VARCHAR(30) // purchase_receipt, sale_shipment, scrap, adjustment, return
+    quantity: INTEGER // positive in, negative out
+    product_id: INTEGER
+    reference_type: VARCHAR(30) // receipt, shipment, adjustment, etc.
+    reference_id: INTEGER
+}
+
+relationship ProductInventoryTxn {
+    Product[1] -> InventoryTransaction[0..N]
+}
